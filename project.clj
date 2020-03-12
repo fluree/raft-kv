@@ -1,8 +1,11 @@
-(defproject raft-kv "0.1.0-SNAPSHOT"
+(defproject raft-kv "0.1.0"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
+  :main raft-kv.core
+  :profiles {:uberjar {:aot :all
+                       :main raft-kv.core}}
   :dependencies [[org.clojure/clojure "1.9.0"]
                  [fluree/raft "0.11.1"]
                  [aleph "0.4.6"]

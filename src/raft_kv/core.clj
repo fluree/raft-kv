@@ -1,4 +1,5 @@
 (ns raft-kv.core
+  (:gen-class)
   (:require [clojure.java.io :as io]
             [taoensso.nippy :as nippy]
             [compojure.core :as compojure :refer [GET POST]]
@@ -549,13 +550,15 @@
   (fn [request]
     (let [deferred (d/deferred)]
       (async/go
-        (try (let [body  (-> request :body parse)
-                   entry (vec body)
-                   body'  (async/<! (new-entry-async (:raft system) entry))
-                   body''  (-> body' cjson/encode
-                                  (.getBytes "UTF-8"))]
-               (d/success! deferred {:status 200
-                                     :body body''}))
+        (try (if (= "close" (subs (:uri request) 1))
+               (stop)
+               (let [body   (-> request :body parse)
+                     entry  (vec body)
+                     body'  (async/<! (new-entry-async (:raft system) entry))
+                     body'' (-> body' cjson/encode
+                                (.getBytes "UTF-8"))]
+                 (d/success! deferred {:status 200
+                                       :body   body''})))
              (catch Exception e
                (d/error! deferred e))))
       deferred)))
@@ -567,7 +570,9 @@
 (defn start
   "Takes a node number - 1, 2, 3, 4, 5. And a total number of nodes"
   [node total]
-  (let [port            (+ 9790 (dec node))
+  (let [node            (if (int? node) node (parse node))
+        total           (if (int? total) total (parse total))
+        port            (+ 9790 (dec node))
         webserver-port  (+ 8080 (dec node))
         this-server     (str "myserver" node)
         server-configs  (map  #(hash-map :server-id (str "myserver" (inc %))
@@ -588,11 +593,16 @@
         system          {:raft raft :webserver webserver}]
     (alter-var-root #'system (constantly system))))
 
+(defn -main
+  [& args]
+  (apply start args))
+
 
 (comment
 
   (start 2 2)
 
+  system
 
   (local-state (:raft system))
 
