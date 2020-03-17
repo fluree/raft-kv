@@ -567,30 +567,58 @@
   [port]
   (http/start-server (handler) {:port port}))
 
+(defn parse-provided-server-configs
+  "Servers provided in the format:
+  1@localhost:8080,2@localhost:8081"
+  [node servers]
+  (let [servers-vec   (str/split servers #",")
+        server-config (map (fn [server]
+                             (let [[id loc] (str/split server #"@")
+                                   [host port] (str/split loc #":")]
+                               (hash-map :server-id id
+                                         :host host
+                                         :port (parse port))))
+                           servers-vec)
+        this-port (some #(when (= node (:server-id %)) (:port %)) server-config)]
+    [this-port server-config]))
+
+(defn get-localhost-server-configs
+  [node total]
+  (let [port           (+ 9790 (dec node))
+        server-configs (map #(hash-map :server-id (str (inc %))
+                                       :host "localhost"
+                                       :port (+ 9790 %)) (range 0 total))]
+    [port server-configs]))
+
 (defn start
   "Takes a node number - 1, 2, 3, 4, 5. And a total number of nodes"
-  [node total]
-  (let [node            (if (int? node) node (parse node))
-        total           (if (int? total) total (parse total))
-        port            (+ 9790 (dec node))
-        webserver-port  (+ 8080 (dec node))
-        this-server     (str "myserver" node)
-        server-configs  (map  #(hash-map :server-id (str "myserver" (inc %))
-                                        :host "localhost"
-                                        :port (+ 9790 %)) (range 0 total))
-        raft-configs    {:port               port
-                         :log-directory      (str "data/" node "/log")
-                         :timeout-ms         1500
-                         :heartbeat-ms       500
-                         :retain-logs        5
-                         :snapshot-threshold 200
-                         :join?              false
-                         :catch-up-rounds    10
-                         :private-keys       ""
-                         :open-api           true}
-        raft            (launch-raft-server server-configs this-server raft-configs)
-        webserver       (start-webserver webserver-port)
-        system          {:raft raft :webserver webserver}]
+   [node total]
+  (let [node           (if (int? node) node (parse node))
+        webserver-port (+ 8080 (dec node))
+        this-server     (str node)
+        [port server-configs] (cond (int? total)
+                               (get-localhost-server-configs node total)
+
+                               (try (parse total)
+                                  (catch Exception e nil))
+                               (get-localhost-server-configs node (parse total))
+
+                               :else
+                               (parse-provided-server-configs node total))
+        raft-configs   {:port               port
+                        :log-directory      (str "data/" node "/log")
+                        :timeout-ms         1500
+                        :heartbeat-ms       500
+                        :retain-logs        5
+                        :snapshot-threshold 200
+                        :join?              false
+                        :catch-up-rounds    10
+                        :private-keys       ""
+                        :open-api           true}
+        raft           (launch-raft-server server-configs this-server raft-configs)
+        webserver      (start-webserver webserver-port)
+        system         {:raft raft :webserver webserver}
+        _              (log/info "SYSTEM STARTED!")]
     (alter-var-root #'system (constantly system))))
 
 (defn -main
