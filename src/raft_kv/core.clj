@@ -580,7 +580,7 @@
                                          :port (parse port))))
                            servers-vec)
         this-port (some #(when (= node (:server-id %)) (:port %)) server-config)]
-    [this-port server-config]))
+    [this-port server-config 8080]))
 
 (defn get-localhost-server-configs
   [node total]
@@ -588,7 +588,7 @@
         server-configs (map #(hash-map :server-id (str (inc %))
                                        :host "localhost"
                                        :port (+ 9790 %)) (range 0 total))]
-    [port server-configs]))
+    [port server-configs (+ 8080 (dec node))]))
 
 (defn start
   "Takes a node number - 1, 2, 3, 4, 5. And a total number of nodes"
@@ -596,7 +596,8 @@
   (let [node           (if (int? node) node (parse node))
         webserver-port (+ 8080 (dec node))
         this-server     (str node)
-        [port server-configs] (cond (int? total)
+        [port server-configs
+         webserver-port] (cond (int? total)
                                (get-localhost-server-configs node total)
 
                                (try (parse total)
@@ -623,12 +624,13 @@
 
 (defn -main
   [& args]
-  (apply start args))
+  (let [args (map str args)]
+    (apply start args)))
 
 
 (comment
 
-  (start 2 2)
+  (start 1 "1@172.18.0.2/16:8080")
 
   system
 
