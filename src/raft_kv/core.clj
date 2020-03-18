@@ -21,6 +21,30 @@
 
 (def system nil)
 
+(def ips (try (slurp "/ips.txt")
+              (catch Exception e ",jepsen-control@172.18.0.7/16,jepsen-n3@172.18.0.5/16,jepsen-n1@172.18.0.3/16,jepsen-n5@172.18.0.4/16,jepsen-n4@172.18.0.6/16,jepsen-n2@172.18.0.2/16,")))
+
+(defn format-ips
+  ([ips]
+   (format-ips ips nil))
+  ([ips port]
+   (let [ips'         (-> (subs ips 1 (dec (count ips)))
+                          (str/split #","))
+         no-control   (filter #(not (str/includes? % "jepsen-control")) ips')
+         format-names (map (fn [ip]
+                             (let [node-named (str/replace ip "jepsen-n" "")
+                                   [name loc] (str/split node-named #"@")
+                                   [base mask] (str/split loc #"/")
+                                   port       (or port (-> (read-string name) dec (+ 9790)))]
+                               (str name "@" base ":" port))) no-control)]
+     (str/join "," format-names))))
+
+(defn get-server
+  "The HTTP url clients use to talk to a node."
+  [node]
+  (some #(when (str/includes? % (str node "@"))
+           (-> (str/split % #"@") second)) (str/split (format-ips ips nil) #",")))
+
 ;; This is virtually identical to how we run RAFT for Fluree, except the state-machine is only
 ;; a key-val store
 (defn state-machine
@@ -567,20 +591,19 @@
   [port]
   (http/start-server (handler) {:port port}))
 
-(defn parse-provided-server-configs
+
+(defn get-servers
   "Servers provided in the format:
   1@localhost:8080,2@localhost:8081"
-  [node servers]
-  (let [servers-vec   (str/split servers #",")
-        server-config (map (fn [server]
-                             (let [[id loc] (str/split server #"@")
-                                   [host port] (str/split loc #":")]
-                               (hash-map :server-id id
-                                         :host host
-                                         :port (parse port))))
-                           servers-vec)
-        this-port (some #(when (= node (:server-id %)) (:port %)) server-config)]
-    [this-port server-config 8080]))
+  [node total]
+  (let [servers (->> (map #(str % "@" (get-server %)) (range 1 (inc total)))
+                    (str/join ","))
+        port    (-> (get-server node)
+                    (str/split #":")
+                    second
+                    read-string)]
+    [port servers 8080]))
+
 
 (defn get-localhost-server-configs
   [node total]
@@ -590,22 +613,17 @@
                                        :port (+ 9790 %)) (range 0 total))]
     [port server-configs (+ 8080 (dec node))]))
 
+
+
 (defn start
   "Takes a node number - 1, 2, 3, 4, 5. And a total number of nodes"
    [node total]
-  (let [node           (if (int? node) node (parse node))
-        webserver-port (+ 8080 (dec node))
+  (let [node           (if (int? node) node (read-string node))
+        total           (if (int? total) total (read-string total))
         this-server     (str node)
         [port server-configs
-         webserver-port] (cond (int? total)
-                               (get-localhost-server-configs node total)
-
-                               (try (parse total)
-                                  (catch Exception e nil))
-                               (get-localhost-server-configs node (parse total))
-
-                               :else
-                               (parse-provided-server-configs node total))
+         webserver-port] (if (nil? ips) (get-localhost-server-configs node (parse total))
+                               (get-servers node total))
         raft-configs   {:port               port
                         :log-directory      (str "data/" node "/log")
                         :timeout-ms         1500
