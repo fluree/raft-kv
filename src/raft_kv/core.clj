@@ -596,13 +596,23 @@
   "Servers provided in the format:
   1@localhost:8080,2@localhost:8081"
   [node total]
-  (let [servers (->> (map #(str % "@" (get-server %)) (range 1 (inc total)))
-                    (str/join ","))
+  (let [servers (map (fn [server]
+                          (let [[host port] (str/split (get-server server) #":")]
+                            (hash-map :server-id (str server)
+                                      :host host
+                                      :port (read-string port))))
+                        (range 1 (inc total)))
         port    (-> (get-server node)
                     (str/split #":")
                     second
                     read-string)]
     [port servers 8080]))
+
+(comment
+
+  (get-servers 1 5)
+
+  )
 
 
 (defn get-localhost-server-configs
@@ -622,7 +632,8 @@
         total           (if (int? total) total (read-string total))
         this-server     (str node)
         [port server-configs
-         webserver-port] (if (nil? ips) (get-localhost-server-configs node (parse total))
+         webserver-port] (if (nil? ips)
+                                   (get-localhost-server-configs node (parse total))
                                (get-servers node total))
         raft-configs   {:port               port
                         :log-directory      (str "data/" node "/log")
